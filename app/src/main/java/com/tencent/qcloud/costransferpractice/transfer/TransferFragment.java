@@ -2,6 +2,8 @@ package com.tencent.qcloud.costransferpractice.transfer;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.graphics.drawable.AnimationDrawable;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
@@ -12,6 +14,7 @@ import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -21,6 +24,7 @@ import com.tencent.cos.xml.transfer.TransferState;
 import com.tencent.qcloud.costransferpractice.COSConfigManager;
 import com.tencent.qcloud.costransferpractice.R;
 import com.tencent.qcloud.costransferpractice.common.FilePathHelper;
+import com.tencent.qcloud.costransferpractice.common.LoadingDialogFragment;
 
 import java.text.DecimalFormat;
 import java.util.LinkedList;
@@ -53,11 +57,15 @@ public class TransferFragment extends Fragment implements TransferContract.View,
     private Spinner regionSpinner;
     private Spinner bucketSpinner;
 
-    private COSConfigManager cosConfigManager;
+    private LoadingDialogFragment loadingDialog;
 
-//    private String bucket;
-//    private String region;
+    AnimationDrawable animationDrawable;
 
+
+    Map<String, List<String>> regionAndBuckets;
+
+    final private String REGION_POSITION_KEY = "region_position_key";
+    final private String BUCKET_POSITION_KEY = "bucket_position_key";
 
     @Nullable
     @Override
@@ -65,7 +73,7 @@ public class TransferFragment extends Fragment implements TransferContract.View,
 
         contentView = inflater.inflate(R.layout.fragment_transfer, container, false);
         initContentView(contentView);
-        cosConfigManager = COSConfigManager.getInstance();
+        transferPresenter.start();
 
         return contentView;
     }
@@ -73,7 +81,6 @@ public class TransferFragment extends Fragment implements TransferContract.View,
     @Override
     public void onResume() {
         super.onResume();
-        transferPresenter.start();
     }
 
     @Override
@@ -117,6 +124,11 @@ public class TransferFragment extends Fragment implements TransferContract.View,
         cancelDownload.setOnClickListener(this);
 
         chooseFile.setOnClickListener(this);
+
+        ImageView piano = contentView.findViewById(R.id.piano);
+        animationDrawable = (AnimationDrawable) piano.getBackground();
+
+        loadingDialog = new LoadingDialogFragment();
     }
 
     @Override
@@ -200,6 +212,11 @@ public class TransferFragment extends Fragment implements TransferContract.View,
             public void run() {
                 uploadProgress.setProgress((int) (100 * progress / total));
                 uploadProgressText.setText(size(progress) + "/" + size(total));
+
+                if (atLastFrame() || !animationDrawable.isRunning()) {
+                    animationDrawable.setVisible(false, true);
+                    animationDrawable.start();
+                }
             }
         });
     }
@@ -212,42 +229,61 @@ public class TransferFragment extends Fragment implements TransferContract.View,
             public void run() {
                 downloadProgress.setProgress((int) (100 * progress / total));
                 downloadProgressText.setText(size(progress) + "/" + size(total));
+
+                if (atLastFrame() || !animationDrawable.isRunning()) {
+                    animationDrawable.setVisible(false, true);
+                    animationDrawable.start();
+                }
             }
         });
+    }
+
+    private boolean atLastFrame() {
+
+        int lastFrame = animationDrawable.getNumberOfFrames();
+
+        return animationDrawable.getCurrent() == animationDrawable.getFrame(lastFrame-1);
     }
 
     @Override
     public void setLoading(boolean loading) {
 
+        if (loading) {
+
+            loadingDialog.show(getActivity().getFragmentManager(), "loading");
+        } else {
+            loadingDialog.dismiss();
+        }
+    }
+
+    @Override
+    public void clearTransferProgressAndState() {
+
+        uploadProgress.setProgress(0);
+        uploadProgressText.setText("");
+        uploadState.setText("无");
+
+        downloadProgress.setProgress(0);
+        downloadProgressText.setText("");
+        downloadState.setText("无");
     }
 
     @Override
     public void showRegionAndBucket(final Map<String, List<String>> buckets) {
+
+        regionAndBuckets = buckets;
 
         final List<String> regions = new LinkedList<>(buckets.keySet());
 
         regionSpinner.setAdapter(new ArrayAdapter<>(getContext(), R.layout.spinner_item, R.id.item,
                 regions));
 
-        if (regions.size() > 0) {
-
-
-            bucketSpinner.setAdapter(new ArrayAdapter<>(getContext(), R.layout.spinner_item, R.id.item,
-                    buckets.get(regions.get(0))));
-
-            String region = regions.get(0);
-            cosConfigManager.setRegion(region);
-            cosConfigManager.setBucket(buckets.get(region).size() > 0 ? buckets.get(region).get(0) : null);
-        }
-
         regionSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
 
-                bucketSpinner.setAdapter(new ArrayAdapter<>(getContext(), R.layout.spinner_item, R.id.item,
-                        buckets.get(regions.get(position))));
-
-                cosConfigManager.setRegion(regions.get(position));
+                refreshBucketSpinner(position, 0);
+                transferPresenter.refreshRegion(regions.get(position), position);
             }
 
             @Override
@@ -259,7 +295,9 @@ public class TransferFragment extends Fragment implements TransferContract.View,
         bucketSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                cosConfigManager.setBucket((String) bucketSpinner.getAdapter().getItem(position));
+
+                transferPresenter.refreshBucket((String) bucketSpinner.getAdapter().getItem(position),
+                        position);
             }
 
             @Override
@@ -267,6 +305,40 @@ public class TransferFragment extends Fragment implements TransferContract.View,
 
             }
         });
+    }
+
+    @Override
+    public void restore(int regionPosition, int bucketPosition) {
+
+        refreshRegionSpinner(regionPosition);
+        refreshBucketSpinner(regionPosition, bucketPosition);
+    }
+
+    private void refreshRegionSpinner(int regionPosition) {
+
+        if (regionPosition > 0) {
+            regionSpinner.setSelection(regionPosition);
+        }
+
+        final List<String> regions = new LinkedList<>(regionAndBuckets.keySet());
+    }
+
+    /**
+     *
+     * @param regionPosition
+     * @param bucketPosition
+     */
+    private void refreshBucketSpinner(int regionPosition, int bucketPosition) {
+
+        String region = new LinkedList<>(regionAndBuckets.keySet()).get(regionPosition);
+        List<String> buckets = regionAndBuckets.get(region);
+
+        bucketSpinner.setAdapter(new ArrayAdapter<>(getContext(), R.layout.spinner_item, R.id.item,
+                buckets));
+
+        if (bucketPosition > 0) {
+            bucketSpinner.setSelection(bucketPosition);
+        }
     }
 
     @Override
@@ -303,7 +375,8 @@ public class TransferFragment extends Fragment implements TransferContract.View,
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == OPEN_FILE_CODE && resultCode == Activity.RESULT_OK) {
 
-            cosConfigManager.setLocalFilePath(FilePathHelper.getPath(getActivity(), data.getData()));
+            transferPresenter.refreshUploadCosAndLocalPath(FilePathHelper.getPath(getActivity(), data.getData()));
+            clearTransferProgressAndState();
         }
     }
 }

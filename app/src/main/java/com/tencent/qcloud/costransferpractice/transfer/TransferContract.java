@@ -33,13 +33,17 @@ public class TransferContract {
 
         void cancelDownload();
 
-        void refreshRegion(String region);
+        void refreshRegion(String region, int position);
+
+        void refreshBucket(String bucket, int position);
+
+        void refreshUploadCosAndLocalPath(String path);
 
         void release();
+
     }
 
     interface View extends BaseView<Presenter> {
-
 
         void toastMessage(String message);
 
@@ -53,6 +57,10 @@ public class TransferContract {
 
         void setLoading(boolean loading);
 
+        void clearTransferProgressAndState();
+
         void showRegionAndBucket(Map<String, List<String>> buckets);
+
+        void restore(int regionPosition, int bucketPosition);
     }
 }

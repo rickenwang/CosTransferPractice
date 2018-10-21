@@ -70,15 +70,35 @@ public class TransferPresenter implements TransferContract.Presenter {
     private COSXMLDownloadTask cosxmlDownloadTask;
     private COSXMLUploadTask cosxmlUploadTask;
 
-    private Map<String, List<String>> buckets;
+    private Map<String, List<String>> regionAndBuckets;
 
-    private String bucket;
+    private String currentBucket;
+    private String currentRegion;
 
-    public TransferPresenter(Context context, TransferContract.View view, Map<String, List<String>> buckets) {
+    /**
+     * 上传时的本地和 COS 路径
+     */
+    private String currentUploadPath;
+
+    /**
+     * 下载时的 COS 路径
+     */
+    private String currentDownloadCosPath;
+
+    /**
+     * 下载时的本地父目录
+     */
+    private File downloadParentDir;
+
+    private int regionPosition;
+    private int bucketPosition;
+
+
+    public TransferPresenter(Context context, TransferContract.View view, Map<String, List<String>> regionAndBuckets) {
 
         this.context = context;
         cosConfig = COSConfigManager.getInstance();
-        this.buckets = buckets;
+        this.regionAndBuckets = regionAndBuckets;
         this.view = view;
         view.setPresenter(this);
     }
@@ -86,17 +106,23 @@ public class TransferPresenter implements TransferContract.Presenter {
     @Override
     public void start() {
 
-        //checkConfig(cosConfig.appid, cosConfig.region, cosConfig.bucket,
-        //       cosConfig.signUrl, cosConfig.localFilePath);
+        if (Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED)) {
+            downloadParentDir = Environment.getExternalStorageDirectory();
+        } else {
+            downloadParentDir = context.getFilesDir();
+        }
 
-        //initCosService();
-        view.showRegionAndBucket(buckets);
+        view.showRegionAndBucket(regionAndBuckets);
+
+        if (regionPosition != 0 || bucketPosition != 0) {
+            view.restore(regionPosition, bucketPosition);
+        }
     }
 
     @Override
     public void startUpload() {
 
-        if (TextUtils.isEmpty(cosConfig.getLocalFilePath())) {
+        if (TextUtils.isEmpty(currentUploadPath)) {
 
             view.toastMessage("请先选择文件");
             return;
@@ -104,8 +130,8 @@ public class TransferPresenter implements TransferContract.Presenter {
 
         if (cosxmlUploadTask == null) {
 
-            cosxmlUploadTask = transferManager.upload(bucket, cosConfig.localFilePath,
-                    cosConfig.localFilePath, null);
+            cosxmlUploadTask = transferManager.upload(currentBucket, currentUploadPath,
+                    currentUploadPath, null);
 
             cosxmlUploadTask.setTransferStateListener(new TransferStateListener() {
                 @Override
@@ -124,7 +150,7 @@ public class TransferPresenter implements TransferContract.Presenter {
                 @Override
                 public void onSuccess(CosXmlRequest request, CosXmlResult result) {
                     cosxmlUploadTask = null;
-                    cosConfig.setCosFilePath(cosConfig.getLocalFilePath());
+                    currentDownloadCosPath = currentUploadPath;
                 }
 
                 @Override
@@ -168,7 +194,7 @@ public class TransferPresenter implements TransferContract.Presenter {
     @Override
     public void startDownload() {
 
-        if (TextUtils.isEmpty(cosConfig.getCosFilePath())) {
+        if (TextUtils.isEmpty(currentDownloadCosPath)) {
 
             view.toastMessage("请先上传文件");
             return;
@@ -176,10 +202,10 @@ public class TransferPresenter implements TransferContract.Presenter {
 
         if (cosxmlDownloadTask == null) {
 
-            File file = new File(cosConfig.localFilePath);
+            File file = new File(currentUploadPath);
 
-            cosxmlDownloadTask = transferManager.download(context, bucket, cosConfig.localFilePath,
-                    Environment.getExternalStorageDirectory().toString(), "cos_download_" + file.getName());
+            cosxmlDownloadTask = transferManager.download(context, currentBucket, currentDownloadCosPath,
+                    downloadParentDir.toString(), "cos_download_" + file.getName());
 
             cosxmlDownloadTask.setTransferStateListener(new TransferStateListener() {
                 @Override
@@ -243,8 +269,9 @@ public class TransferPresenter implements TransferContract.Presenter {
     }
 
     @Override
-    public void refreshRegionAndBucket(String region, String bucket) {
+    public void refreshRegion(String region, int position) {
 
+        regionPosition = position;
         cosXmlService = CosServiceFactory.getCosXmlServiceWithProperWay(context, region);
         TransferConfig transferConfig = new TransferConfig.Builder()
                 .build();
@@ -253,8 +280,19 @@ public class TransferPresenter implements TransferContract.Presenter {
          * 上传文件到 COS 或者从 COS 下载文件时，请优先使用这个类。
          */
         transferManager = new TransferManager(cosXmlService, transferConfig);
+    }
 
-        this.bucket = bucket;
+    @Override
+    public void refreshBucket(String bucket, int position) {
+
+        bucketPosition = position;
+        this.currentBucket = bucket;
+    }
+
+    @Override
+    public void refreshUploadCosAndLocalPath(String path) {
+
+        currentUploadPath = path;
     }
 
 
@@ -322,7 +360,7 @@ public class TransferPresenter implements TransferContract.Presenter {
         } else {
 
             Log.i("cos", "auto choose local file path " + localFilePath);
-            cosConfig.localFilePath = localFilePath;
+            // cosConfig.localFilePath = localFilePath;
         }
 
     }

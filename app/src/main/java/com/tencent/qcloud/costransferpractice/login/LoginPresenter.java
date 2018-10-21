@@ -34,6 +34,8 @@ public class LoginPresenter implements LoginContract.Presenter {
 
     private LoginContract.View view;
 
+    COSConfigManager cosConfigManager;
+
     LoginPresenter(Context context, LoginContract.View view) {
 
         this.context = context;
@@ -42,7 +44,7 @@ public class LoginPresenter implements LoginContract.Presenter {
     }
 
     @Override
-    public void confirmWithTemporaryKey(String appid, String url) {
+    public void confirmWithTemporaryKey(final String appid, final String url) {
 
         view.setLoading(true);
 
@@ -56,6 +58,9 @@ public class LoginPresenter implements LoginContract.Presenter {
             @Override
             public void onSuccess(CosXmlRequest request, CosXmlResult result) {
 
+                cosConfigManager.setAppid(appid);
+                cosConfigManager.setSignUrl(url);
+                cosConfigManager.save2Disk(context);
                 view.loginSuccess(getRegionAndBuckets((GetServiceResult) result));
                 view.setLoading(false);
             }
@@ -70,7 +75,7 @@ public class LoginPresenter implements LoginContract.Presenter {
     }
 
     @Override
-    public void confirmWithForeverKey(String appid, String secretId, String secretKey) {
+    public void confirmWithForeverKey(final String appid, final String secretId, final String secretKey) {
 
         view.setLoading(true);
 
@@ -80,12 +85,18 @@ public class LoginPresenter implements LoginContract.Presenter {
                     appid, secretId, secretKey, true);
         }
 
-        temporaryKeyService.getServiceAsync(new GetServiceRequest(), new CosXmlResultListener() {
+        foreverKeyService.getServiceAsync(new GetServiceRequest(), new CosXmlResultListener() {
             @Override
             public void onSuccess(CosXmlRequest request, CosXmlResult result) {
 
+                cosConfigManager.setAppid(appid);
+                cosConfigManager.setSecretId(secretId);
+                cosConfigManager.setSecretKey(secretKey);
+                cosConfigManager.save2Disk(context);
+
                 view.loginSuccess(getRegionAndBuckets((GetServiceResult) result));
                 view.setLoading(false);
+
             }
 
             @Override
@@ -100,7 +111,7 @@ public class LoginPresenter implements LoginContract.Presenter {
     @Override
     public void start() {
 
-        COSConfigManager cosConfigManager = COSConfigManager.getInstance();
+        cosConfigManager = COSConfigManager.getInstance();
         cosConfigManager.loadFromDisk(context);
 
         view.config(cosConfigManager.getAppid(), cosConfigManager.getSignUrl(),

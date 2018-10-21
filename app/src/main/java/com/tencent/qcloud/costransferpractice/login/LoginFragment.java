@@ -18,6 +18,7 @@ import android.widget.Toast;
 
 import com.tencent.qcloud.costransferpractice.MainActivity;
 import com.tencent.qcloud.costransferpractice.R;
+import com.tencent.qcloud.costransferpractice.common.LoadingDialogFragment;
 
 import java.util.List;
 import java.util.Map;
@@ -51,6 +52,8 @@ public class LoginFragment extends Fragment implements LoginContract.View {
     String signUrlText;
     String secretIdText;
     String secretKeyText;
+
+    LoadingDialogFragment loadingDialog;
 
     @Nullable
     @Override
@@ -91,6 +94,8 @@ public class LoginFragment extends Fragment implements LoginContract.View {
                 refreshLoginMode(!isChecked);
             }
         });
+
+        loadingDialog = new LoadingDialogFragment();
 
         confirm.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -150,6 +155,12 @@ public class LoginFragment extends Fragment implements LoginContract.View {
     @Override
     public void setLoading(boolean loading) {
 
+        if (loading) {
+
+            loadingDialog.show(getActivity().getFragmentManager(), "loading");
+        } else {
+            loadingDialog.dismiss();
+        }
     }
 
     @Override
